@@ -1,8 +1,11 @@
 import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import react from '@vitejs/plugin-react' // または使用している他のフレームワークプラグイン
 
-// vite.config.js
 export default defineConfig({
-  base: '/seating-chart-app/',  // GitHub Pagesで使うサブディレクトリ名
   plugins: [react()],
-});
+  base: '/seating-chart-app/',
+  root: './', // プロジェクトルートを明示的に指定
+  build: {
+    outDir: 'dist' // ビルド出力先ディレクトリ
+  }
+})
