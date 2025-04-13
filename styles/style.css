@@ -4,9 +4,35 @@ body {
     padding: 20px;
   }
   
+  .app-container {
+    display: flex;
+    flex-direction: row; /* 横並びを強制 */
+    height: calc(100vh - 150px); /* 画面高さを活用 */
+    min-height: 600px;
+  }
+  
+  /* Style.cssに追加 */
+  .seats-container, .extra-seats-container {
+    position: relative;
+    border: 2px solid transparent;
+    transition: border-color 0.2s;
+  }
+
+  .seats-container.can-drop, .extra-seats-container.can-drop {
+    border-color: #3498db;
+    background-color: rgba(52, 152, 219, 0.05);
+  }
+
+  .main-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* スクロールを制御 */
+  }
+
   .container {
-    max-width: 900px;
-    margin: auto;
+    max-width: auto;
+    margin: 0 auto;
     padding: 20px;
     background: white;
     border-radius: 12px;
@@ -47,33 +73,74 @@ body {
   }
 
   .seat-box {
-    border: 1px solid #ccc;
+    width: 100%;
+    height: 100%;
     padding: 10px;
-    text-align: center;
-    align-items: center;
-    width: 80px;
-    height: 60px;
-    background-color: #f8f8f8;
-    border-radius: 8px;
-    box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
     display: flex;
     flex-direction: column;
     justify-content: center;
   }
   
-  .hiragana {
-    font-size: 12px;
-    color: #555;
+  .seat-box .kanji {
+    font-size: calc(14px + 0.3vw); /* レスポンシブなフォントサイズ */
+    line-height: 1.2;
+    margin-bottom: 6px;
   }
   
-  .kanji {
-    font-size: 16px;
-    font-weight: bold;
-    color: #222;
+  .seat-box .hiragana {
+    font-size: calc(10px + 0.1vw);
+    line-height: 1.2;
   }
-  
   .seat-box .empty {
     color: #ccc;
     background: #fff;
     cursor: grab;
   }
+
+  /* 横長レイアウト用のスタイル */
+.wide-layout {
+  max-width: 2500px;
+}
+
+.main-layout {
+  display: flex;
+  height: 100%;
+}
+
+.tags-section {
+  width: 220px;
+  min-width: 220px;
+  padding-right: 15px;
+  overflow-y: auto;
+}
+
+.name-tags-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.seating-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* レスポンシブ調整 */
+@media (max-width: 1100px) {
+  .main-layout {
+    flex-direction: column;
+  }
+  
+  .tags-section {
+    width: 100%;
+    padding-right: 0;
+    padding-bottom: 15px;
+  }
+  
+  .name-tags-container {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+}

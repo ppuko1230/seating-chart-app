@@ -34,7 +34,8 @@ const SeatBox = ({ id, assigned, seatColor = "#f9f9f9", textColor = "#000000", a
   } : {};
 
   return (
-    <div
+     <div
+      className="seat-box"
       ref={(node) => {
         setDroppableRef(node);
         setDraggableRef(node);

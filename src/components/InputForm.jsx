@@ -11,10 +11,22 @@ export default function InputForm({
   onRowChange,
   onColumnChange,
   onNameChange,
-  isInputVisible // 追加: isInputVisibleをpropsとして受け取る
+  isInputVisible,
+  onExcelImport
 }) {
   return (
     <div className="input-form">
+      {/* Excel インポート機能を追加 */}
+      <div className="form-group" style={{ marginTop: '20px', padding: '10px', backgroundColor: '#f0f8ff', borderRadius: '5px' }}>
+        <h3>Excelから名簿をインポート</h3>
+        <p>※ Excelファイルの1列目に「名前」、2列目に「ふりがな」が入力されていることを確認してください。</p>
+        <input
+          type="file"
+          accept=".xlsx,.xls"
+          onChange={onExcelImport}
+          style={{ padding: '5px' }}
+        />
+      </div>
       <label>
         生徒の人数:
         <input
@@ -87,6 +99,7 @@ export default function InputForm({
           </div>
         )}
       </div>
+
     </div>
   );
 }

@@ -1,11 +1,8 @@
+// vite.config.js を編集
 import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react' // または使用している他のフレームワークプラグイン
+import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  base: '/seating-chart-app/',
-  root: './', // プロジェクトルートを明示的に指定
-  build: {
-    outDir: 'dist' // ビルド出力先ディレクトリ
-  }
+  base: '/new-seating-chart-app/' // GitHubリポジトリ名に合わせて変更
 })

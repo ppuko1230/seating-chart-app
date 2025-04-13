@@ -1,0 +1,577 @@
+import React, { useState, useEffect, useCallback } from "react";
+import InputForm from './components/InputForm';
+import NameTag from './components/NameTag';
+import SeatBox from './components/SeatBox';
+import { DndContext, useDraggable, useDroppable } from '@dnd-kit/core';
+import './App.css'; 
+import '../styles/style.css'; 
+
+export default function App() {
+  // 状態の整理: 関連するものをグループ化
+  // 座席の見た目関連
+  const [seatStyles, setSeatStyles] = useState({
+    seatColor: "#f9f9f9",          // デフォルトの背景色
+    assignedColor: "#4CAF50",      // 割り当て済みの席の色
+    textColor: "#000000",          // テキストの色
+    assignedTextColor: "#ffffff",  // 割り当て済みテキストの色
+    seatSize: 100                  // 座席のサイズ
+  });
+  
+  // レイアウト関連
+  const [layout, setLayout] = useState({
+    rowCount: 0,
+    columnCount: 0,
+    paddings: 5,
+    columnPaddings: []
+  });
+  
+  // コンテナサイズ関連
+  const [containerSizes, setContainerSizes] = useState({
+    main: { width: 800, height: 600 },
+    extra: { width: "100%", height: 400 }
+  });
+  
+  // 生徒と座席関連
+  const [studentCount, setStudentCount] = useState(0);
+  const [names, setNames] = useState([]);
+  const [seats, setSeats] = useState([]);
+  const [extraSeats, setExtraSeats] = useState([]);
+  
+  // UI状態管理
+  const [isInputVisible, setIsInputVisible] = useState(true);
+  const [isPanelCollapsed, setIsPanelCollapsed] = useState(false);
+  const [activeTab, setActiveTab] = useState('basic'); 
+  const [draggedType, setDraggedType] = useState(null);
+
+  // 座席スタイルの更新関数
+  const updateSeatStyle = (property, value) => {
+    setSeatStyles(prev => ({ ...prev, [property]: value }));
+  };
+  
+  // レイアウトの更新関数
+  const updateLayout = (property, value) => {
+    setLayout(prev => ({ ...prev, [property]: value }));
+    
+    // 列数が変更された場合は、列間パディングも更新
+    if (property === 'columnCount') {
+      const newSize = Math.max(0, value - 1);
+      if (layout.columnPaddings.length !== newSize) {
+        setLayout(prev => ({
+          ...prev,
+          columnPaddings: Array(newSize).fill(layout.paddings)
+        }));
+      }
+    }
+  };
+  
+  // コンテナサイズの更新関数
+  const updateContainerSize = (container, dimension, value) => {
+    setContainerSizes(prev => ({
+      ...prev,
+      [container]: {
+        ...prev[container],
+        [dimension]: parseInt(value, 10) || (dimension === 'width' ? "100%" : 0)
+      }
+    }));
+  };
+
+  // 列間のパディングを設定するuseEffect（最適化済み）
+  useEffect(() => {
+    const { columnCount, paddings, columnPaddings } = layout;
+    const newSize = Math.max(0, columnCount - 1);
+    
+    if (columnPaddings.length !== newSize) {
+      setLayout(prev => ({
+        ...prev,
+        columnPaddings: Array(newSize).fill(paddings)
+      }));
+    }
+  }, [layout.columnCount, layout.paddings]);
+  
+  // 座席を計算する関数（最適化）
+  const calculateAndSetSeats = useCallback(() => {
+    const { rowCount, columnCount, columnPaddings, paddings } = layout;
+    const { seatSize } = seatStyles;
+    
+    if (studentCount <= 0 || (rowCount <= 0 && columnCount <= 0)) {
+      return;
+    }
+    
+    // 行数と列数を計算（既に入力された場合、ユーザー入力を優先）
+    const cols = columnCount || Math.ceil(Math.sqrt(studentCount));
+    const rows = rowCount || Math.ceil(studentCount / cols);
+    
+    // 座席の最大数
+    const maxGridSeats = rows * cols;
+
+    // 座席の初期位置を計算
+    const filledSeats = Array.from({ length: Math.min(maxGridSeats, studentCount) }, (_, idx) => {
+      const rowIndex = Math.floor(idx / cols);
+      const colIndex = idx % cols;
+      
+      // 列のパディングを計算（列間のパディングを累積）
+      let totalColPadding = 0;
+      for (let i = 0; i < colIndex; i++) {
+        totalColPadding += (columnPaddings[i] || paddings);
+      }
+      
+      return {
+        assignedName: null,
+        x: colIndex * seatSize + totalColPadding,
+        y: rowIndex * seatSize,
+      };
+    });
+
+    // 余った席の計算（自由に配置可能）
+    const extraSeatsCount = Math.max(0, studentCount - maxGridSeats);
+    const newExtraSeats = Array.from({ length: extraSeatsCount }, (_, idx) => ({
+      assignedName: null,
+      x: 0,
+      y: (idx + 1) * 150,
+    }));
+
+    setSeats(filledSeats);
+    setExtraSeats(newExtraSeats);
+  }, [studentCount, layout, seatStyles.seatSize]);
+
+  // 座席を自動的に更新するための useEffect
+  useEffect(() => {
+    calculateAndSetSeats();
+  }, [calculateAndSetSeats]);
+
+  // 名前の更新
+  const updateName = (index, newName) => {
+    setNames(prevNames => {
+      const updated = [...prevNames];
+      updated[index] = newName;
+      return updated;
+    });
+  };
+  
+  // ドラッグ開始ハンドラ
+  const handleDragStart = (event) => {
+    const { active } = event;
+    const id = active.id;
+    
+    if (id.includes('name-')) {
+      setDraggedType('NameTag'); 
+    } else if (id.includes('seat-') || id.includes('extraSeat-')) {
+      setDraggedType('SeatBox');
+    }
+  };
+
+  // ドラッグ終了ハンドラ - より明確に機能を分離
+  const handleDragEnd = (event) => {
+    const { active, over, delta } = event;
+    
+    if (!over) {
+      setDraggedType(null);
+      return;
+    }
+    
+    // 名前タグの割り当て処理
+    if (active.id.includes('name-')) {
+      handleNameAssignment(active, over);
+    } 
+    // 座席の移動処理
+    else if (active.id.includes('seat-') || active.id.includes('extraSeat-')) {
+      handleSeatMovement(active, delta);
+    }
+    
+    setDraggedType(null);
+  };
+  
+  // 名前割り当て処理（分離された関数）
+  const handleNameAssignment = (active, over) => {
+    const nameIndex = parseInt(active.id.split('-')[1]);
+    
+    // 通常の座席に割り当て
+    if (over.id.includes('seat-')) {
+      const seatIndex = parseInt(over.id.split('-')[1]);
+      setSeats(prevSeats => {
+        const newSeats = [...prevSeats];
+        newSeats[seatIndex] = {...newSeats[seatIndex], assignedName: names[nameIndex]};
+        return newSeats;
+      });
+    } 
+    // エキストラ座席に割り当て
+    else if (over.id.includes('extraSeat-')) {
+      const extraSeatIndex = parseInt(over.id.split('-')[1]);
+      setExtraSeats(prevExtraSeats => {
+        const newExtraSeats = [...prevExtraSeats];
+        newExtraSeats[extraSeatIndex] = {...newExtraSeats[extraSeatIndex], assignedName: names[nameIndex]};
+        return newExtraSeats;
+      });
+    }
+  };
+  
+  // 座席移動処理（分離された関数）
+  const handleSeatMovement = (active, delta) => {
+    if (active.id.includes("seat-")) {
+      const seatIndex = parseInt(active.id.split('-')[1]);
+      setSeats(prevSeats => {
+        const newSeats = [...prevSeats];
+        newSeats[seatIndex] = {
+          ...newSeats[seatIndex], 
+          x: newSeats[seatIndex].x + delta.x,
+          y: newSeats[seatIndex].y + delta.y
+        };
+        return newSeats;
+      });
+    } else if (active.id.includes("extraSeat-")) {
+      const extraSeatIndex = parseInt(active.id.split('-')[1]);
+      setExtraSeats(prevExtraSeats => {
+        const newExtraSeats = [...prevExtraSeats];
+        newExtraSeats[extraSeatIndex] = {
+          ...newExtraSeats[extraSeatIndex],
+          x: newExtraSeats[extraSeatIndex].x + delta.x,
+          y: newExtraSeats[extraSeatIndex].y + delta.y
+        };
+        return newExtraSeats;
+      });
+    }
+  };
+  
+  // 学生数変更時の処理（名前配列の初期化を含む）
+  const handleStudentCountChange = (val) => {
+    setStudentCount(val);
+    setNames(Array.from({ length: val }, () => ({ kanji: "", hiragana: "" })));
+  };
+
+  return (
+    <div className="container">
+      <h1>🪑 クラス座席表メーカー</h1>
+      
+      <div className="app-container">
+        {/* サイドパネル */}
+        <div className={`side-panel ${isPanelCollapsed ? 'collapsed' : ''}`}>
+          <button 
+            className="panel-toggle" 
+            onClick={() => setIsPanelCollapsed(!isPanelCollapsed)}
+            aria-label={isPanelCollapsed ? "パネルを開く" : "パネルを閉じる"}
+          >
+            {isPanelCollapsed ? '→' : '←'}
+          </button>
+          
+          {/* パネルが開いているときのタブ表示 */}
+          <div className="panel-tabs">
+            <div 
+              className={`panel-tab ${activeTab === 'basic' ? 'active' : ''}`} 
+              onClick={() => setActiveTab('basic')}
+              role="tab"
+              aria-selected={activeTab === 'basic'}
+            >
+              基本設定
+            </div>
+            <div 
+              className={`panel-tab ${activeTab === 'names' ? 'active' : ''}`} 
+              onClick={() => setActiveTab('names')}
+              role="tab"
+              aria-selected={activeTab === 'names'}
+            >
+              名前入力
+            </div>
+            <div 
+              className={`panel-tab ${activeTab === 'appearance' ? 'active' : ''}`} 
+              onClick={() => setActiveTab('appearance')}
+              role="tab"
+              aria-selected={activeTab === 'appearance'}
+            >
+              外観設定
+            </div>
+            <div 
+              className={`panel-tab ${activeTab === 'layout' ? 'active' : ''}`} 
+              onClick={() => setActiveTab('layout')}
+              role="tab"
+              aria-selected={activeTab === 'layout'}
+            >
+              レイアウト
+            </div>
+          </div>
+          
+          {/* 基本設定タブ */}
+          <div className={`tab-content ${activeTab === 'basic' ? 'active' : ''}`} role="tabpanel">
+            <div className="panel-section">
+              <InputForm
+                isInputVisible={true}
+                count={studentCount}
+                rowCount={layout.rowCount}
+                columnCount={layout.columnCount}
+                columnPaddings={layout.columnPaddings}
+                onColumnPaddingsChange={(newPaddings) => 
+                  setLayout(prev => ({ ...prev, columnPaddings: newPaddings }))
+                }
+                names={names}
+                onCountChange={handleStudentCountChange}
+                onRowChange={(val) => updateLayout('rowCount', val)}
+                onColumnChange={(val) => updateLayout('columnCount', val)}
+                onPaddingChange={(val) => updateLayout('paddings', val)}
+                onNameChange={updateName}
+                hideNameInputs={true}
+              />
+            </div>
+          </div>
+          
+          {/* 名前入力タブ */}
+          <div className={`tab-content ${activeTab === 'names' ? 'active' : ''}`} role="tabpanel">
+            <div className="panel-section">
+              <h3>生徒名入力</h3>
+              <div className="names-container">
+                {names.map((name, idx) => (
+                  <div key={idx} className="name-input-row">
+                    <label htmlFor={`student-name-${idx}`}>生徒 {idx + 1}:</label>
+                    <div className="name-input-fields">
+                      <input
+                        id={`student-name-${idx}`}
+                        type="text"
+                        placeholder="名前（漢字）"
+                        value={name.kanji || ''}
+                        onChange={(e) => {
+                          const newName = { ...name, kanji: e.target.value };
+                          updateName(idx, newName);
+                        }}
+                      />
+                      <input
+                        type="text"
+                        placeholder="ふりがな"
+                        value={name.hiragana || ''}
+                        onChange={(e) => {
+                          const newName = { ...name, hiragana: e.target.value };
+                          updateName(idx, newName);
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          
+          {/* 外観設定タブ */}
+          <div className={`tab-content ${activeTab === 'appearance' ? 'active' : ''}`} role="tabpanel">
+            <div className="panel-section">
+              <h3>座席サイズ</h3>
+              <div className="control-row">
+                <label htmlFor="seat-size-slider">座席サイズ: </label>
+                <input 
+                  id="seat-size-slider"
+                  type="range" 
+                  min="50" 
+                  max="170" 
+                  value={seatStyles.seatSize} 
+                  onChange={(e) => updateSeatStyle('seatSize', parseInt(e.target.value))} 
+                />
+                <span>{seatStyles.seatSize}px</span>
+              </div>
+              
+              <h3>座席の色設定</h3>
+              <div className="color-controls">
+                <div className="control-row">
+                  <label htmlFor="empty-seat-color">空席の背景色: </label>
+                  <input 
+                    id="empty-seat-color"
+                    type="color" 
+                    value={seatStyles.seatColor} 
+                    onChange={(e) => updateSeatStyle('seatColor', e.target.value)} 
+                  />
+                  <span className="color-preview" style={{ backgroundColor: seatStyles.seatColor }}></span>
+                </div>
+                <div className="control-row">
+                  <label htmlFor="empty-text-color">空席のテキスト色: </label>
+                  <input 
+                    id="empty-text-color"
+                    type="color" 
+                    value={seatStyles.textColor} 
+                    onChange={(e) => updateSeatStyle('textColor', e.target.value)} 
+                  />
+                  <span className="color-preview" style={{ backgroundColor: seatStyles.textColor }}></span>
+                </div>
+                <div className="control-row">
+                  <label htmlFor="assigned-seat-color">割り当て済み席の背景色: </label>
+                  <input 
+                    id="assigned-seat-color"
+                    type="color" 
+                    value={seatStyles.assignedColor} 
+                    onChange={(e) => updateSeatStyle('assignedColor', e.target.value)} 
+                  />
+                  <span className="color-preview" style={{ backgroundColor: seatStyles.assignedColor }}></span>
+                </div>
+                <div className="control-row">
+                  <label htmlFor="assigned-text-color">割り当て済み席のテキスト色: </label>
+                  <input 
+                    id="assigned-text-color"
+                    type="color" 
+                    value={seatStyles.assignedTextColor} 
+                    onChange={(e) => updateSeatStyle('assignedTextColor', e.target.value)} 
+                  />
+                  <span className="color-preview" style={{ backgroundColor: seatStyles.assignedTextColor }}></span>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          {/* レイアウト設定タブ */}
+          <div className={`tab-content ${activeTab === 'layout' ? 'active' : ''}`} role="tabpanel">
+            <div className="panel-section">
+              <h3>座席エリアのサイズ設定</h3>
+              <div className="layout-controls">
+                <div className="control-row">
+                  <label htmlFor="main-width">メイン幅: </label>
+                  <input 
+                    id="main-width"
+                    type="number" 
+                    min="400" 
+                    max="2000" 
+                    value={containerSizes.main.width} 
+                    onChange={(e) => updateContainerSize('main', 'width', e.target.value)} 
+                  />
+                  <span>px</span>
+                </div>
+                <div className="control-row">
+                  <label htmlFor="main-height">メイン高さ: </label>
+                  <input 
+                    id="main-height"
+                    type="number" 
+                    min="300" 
+                    max="1500" 
+                    value={containerSizes.main.height} 
+                    onChange={(e) => updateContainerSize('main', 'height', e.target.value)} 
+                  />
+                  <span>px</span>
+                </div>
+                <div className="control-row">
+                  <label htmlFor="extra-height">エキストラエリア高さ: </label>
+                  <input 
+                    id="extra-height"
+                    type="number" 
+                    min="100" 
+                    max="800" 
+                    value={containerSizes.extra.height} 
+                    onChange={(e) => updateContainerSize('extra', 'height', e.target.value)} 
+                  />
+                  <span>px</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          {/* パネルが折りたたまれているときのアイコン表示 */}
+          <div className="panel-icons">
+            <div 
+              className="panel-icon" 
+              title="基本設定" 
+              onClick={() => {setIsPanelCollapsed(false); setActiveTab('basic');}}
+            >
+              ⚙️
+            </div>
+            <div 
+              className="panel-icon" 
+              title="名前入力" 
+              onClick={() => {setIsPanelCollapsed(false); setActiveTab('names');}}
+            >
+              👤
+            </div>
+            <div 
+              className="panel-icon" 
+              title="外観設定" 
+              onClick={() => {setIsPanelCollapsed(false); setActiveTab('appearance');}}
+            >
+              🎨
+            </div>
+            <div 
+              className="panel-icon" 
+              title="レイアウト設定" 
+              onClick={() => {setIsPanelCollapsed(false); setActiveTab('layout');}}
+            >
+              📐
+            </div>
+          </div>
+        </div>
+        
+        {/* メインコンテンツエリア */}
+        <div className="main-content">
+          <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+            {/* 名前タグエリア */}
+            <div className="tags-section">
+              <h3>生徒名</h3>
+              <div className="name-tags-container">
+                {names.map((name, idx) => (
+                  <NameTag key={idx} id={`name-${idx}`} name={name} />
+                ))}
+              </div>
+            </div>
+            
+            {/* メイン座席エリア */}
+            <div className="seats-container" style={{
+              width: `${containerSizes.main.width}px`,
+              height: `${containerSizes.main.height}px`
+            }}>
+              {seats.map((seat, idx) => {
+                if (!seat) return null;
+                return (
+                  <div
+                    key={idx}
+                    className="seat-position"
+                    style={{
+                      top: `${seat.y}px`,
+                      left: `${seat.x}px`,
+                      width: `${seatStyles.seatSize}px`,
+                      height: `${seatStyles.seatSize}px`
+                    }}
+                  >
+                    <SeatBox 
+                      id={`seat-${idx}`} 
+                      assigned={seat.assignedName} 
+                      seatColor={seatStyles.seatColor}
+                      textColor={seatStyles.textColor}
+                      assignedColor={seatStyles.assignedColor}
+                      assignedTextColor={seatStyles.assignedTextColor}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+            
+            {/* エキストラ座席エリア */}
+            <div className="extra-seats-container" style={{
+              height: `${containerSizes.extra.height}px`,
+            }}>
+              <h3 className="area-title">エキストラ座席エリア</h3>
+              {extraSeats.map((extraSeat, idx) => {
+                return (
+                  <div
+                    key={`extraSeat-${idx}`}
+                    className="seat-position"
+                    style={{
+                      top: `${extraSeat.y}px`,
+                      left: `${extraSeat.x}px`,
+                      width: `${seatStyles.seatSize}px`,
+                      height: `${seatStyles.seatSize}px`
+                    }}
+                  >
+                    <SeatBox 
+                      id={`extraSeat-${idx}`} 
+                      assigned={extraSeat.assignedName} 
+                      seatColor={seatStyles.seatColor}
+                      textColor={seatStyles.textColor}
+                      assignedColor={seatStyles.assignedColor}
+                      assignedTextColor={seatStyles.assignedTextColor}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+            
+            {/* ドラッグ状態表示 - よりユーザーフレンドリーなインジケーター */}
+            {draggedType && (
+              <div className="drag-status">
+                <span className="drag-indicator"></span>
+                {draggedType === 'NameTag' ? '名前タグをドラッグ中...' : '座席をドラッグ中...'}
+              </div>
+            )}
+          </DndContext>
+        </div>
+      </div>
+    </div>
+  );
+}
