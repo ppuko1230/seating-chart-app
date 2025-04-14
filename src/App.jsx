@@ -2,54 +2,71 @@ import React, { useState, useEffect } from "react";
 import InputForm from './components/InputForm';
 import NameTag from './components/NameTag';
 import SeatBox from './components/SeatBox';
-import { DndContext, MouseSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core';import './App.css'; 
+import { 
+  DndContext, 
+  MouseSensor, 
+  TouchSensor, 
+  useSensor, 
+  useSensors,
+  DragOverlay,
+  defaultDropAnimationSideEffects
+} from '@dnd-kit/core';
+import './App.css'; 
 import '../styles/style.css'; 
 import { read, utils } from 'xlsx';
 
 export default function App() {
-  // App.jsxの先頭で、色設定のstateを追加
-  const [seatColor, setSeatColor] = useState("#f9f9f9"); // デフォルトの背景色
-  const [assignedColor, setAssignedColor] = useState("#4CAF50"); // 割り当て済みの席の色
-  const [textColor, setTextColor] = useState("#000000"); // テキストの色
+
+  const [seatColor, setSeatColor] = useState("#f9f9f9"); 
+  const [assignedColor, setAssignedColor] = useState("#4CAF50"); 
+  const [textColor, setTextColor] = useState("#000000"); 
   const [assignedTextColor, setAssignedTextColor] = useState("#ffffff");
   const [studentCount, setStudentCount] = useState(0);
-  const [isInputVisible, setIsInputVisible] = useState(true); // 名前入力欄の表示/非表示状態
+  const [isInputVisible, setIsInputVisible] = useState(true);
   const [names, setNames] = useState([]);
   const [seats, setSeats] = useState([]);
-  const [extraSeats, setExtraSeats] = useState([]); // 追加：不足していた state
-  const [draggedType, setDraggedType] = useState(null); 
-  const [seatSize, setSeatSize] = useState(100); // 座席のサイズを調整可能に
+  const [draggedItem, setDraggedItem] = useState(null);
+  const [draggedItemType, setDraggedItemType] = useState(null);
+  const [seatSize, setSeatSize] = useState(100); 
   
-  // コンテナサイズの設定を追加
+  const isInside = (x, y, seat) => {
+    return (
+      x >= seat.x &&
+      x <= seat.x + seatSize &&
+      y >= seat.y &&
+      y <= seat.y + seatSize
+    );
+  };
+
   const [mainContainerSize, setMainContainerSize] = useState({
     width: 2000,
     height: 1000
   });
-  const [extraContainerSize, setExtraContainerSize] = useState({
-    width: "100%",
-    height: 400
-  });
 
-  // コンテナサイズを containerSizes としても保持（レイアウト用）
   const [containerSizes, setContainerSizes] = useState({
     main: { width: 2000, height: 600 },
     extra: { width: "100%", height: 400 }
   });
 
-  // App.jsx内、export default function Appの中
+
   const mouseSensor = useSensor(MouseSensor, {
-    // マウスの動きを検知する距離（px）
-    activationConstraint: { distance: 5 },
+
+    activationConstraint: { 
+      distance: 0,   
+      tolerance: 8, 
+    },
   });
 
   const touchSensor = useSensor(TouchSensor, {
-    // タッチの動きを検知する距離（px）
-    activationConstraint: { delay: 100, tolerance: 5 },
+    // タッチ操作のための設定
+    activationConstraint: { 
+      delay: 0,     // 遅延なし
+      tolerance: 5, // 許容誤差
+    },
   });
 
   const sensors = useSensors(mouseSensor, touchSensor);
 
-  // レイアウト設定
   const [layout, setLayout] = useState({
     rowCount: 0,
     columnCount: 0,
@@ -57,25 +74,24 @@ export default function App() {
     columnPaddings: []
   });
 
-  // レイアウト設定の個別state（互換性のため残す）
+
   const [rowCount, setRowCount] = useState(0);
   const [columnCount, setColumnCount] = useState(0);
   const [paddings, setPadding] = useState(10);
   const [columnPaddings, setColumnPaddings] = useState([]);
 
-  // mainContainerSize または extraContainerSize が変更されたらcontainerSizesも更新
+
   useEffect(() => {
     setContainerSizes({
       main: { width: mainContainerSize.width, height: mainContainerSize.height },
-      extra: { width: extraContainerSize.width, height: extraContainerSize.height }
     });
-  }, [mainContainerSize, extraContainerSize]);
+  }, [mainContainerSize]);
 
   const toggleInputVisibility = () => {
     setIsInputVisible((prev) => !prev);
   };
 
-  // 列間のパディングを設定
+
   useEffect(() => {
     setColumnPaddings((prev) => {
       const newSize = Math.max(0, columnCount - 1);
@@ -86,50 +102,45 @@ export default function App() {
     });
   }, [columnCount, paddings]);
   
-  // 座席を自動的に更新するための useEffect
+
   useEffect(() => {
-    // 基本条件：学生数、行数、列数のいずれかが設定されていること
+
     if (studentCount > 0 && (rowCount > 0 || columnCount > 0)) {
       calculateAndSetSeats();
     }
   }, [studentCount, rowCount, columnCount, columnPaddings, paddings, seatSize]);
 
-    // 座席の計算と設定を行う関数（handleCountSubmitから分離）
+  useEffect(() => {
+    document.body.classList.toggle('no-scroll', draggedItem !== null);
+    
+    // クリーンアップ関数
+    return () => {
+      document.body.classList.remove('no-scroll');
+    };
+  }, [draggedItem]);
+
+
   const calculateAndSetSeats = () => {
-    // 行数と列数を計算（既に入力された場合、ユーザー入力を優先）
     const cols = columnCount || Math.ceil(Math.sqrt(studentCount));
     const rows = rowCount || Math.ceil(studentCount / cols);
     
-    // 座席の最大数
-    const maxGridSeats = rows * cols;
-
-    // グリッド全体のサイズを計算
-    let totalGridWidth = 0;
-    let totalGridHeight = 0;
+    const totalGridWidth = cols * seatSize + 
+      (cols - 1) * (columnPaddings[0] || paddings);
     
-    // 列の合計幅を計算（座席のサイズ + 各列間のパディング）
-    totalGridWidth = cols * seatSize;
-    for (let i = 0; i < cols - 1; i++) {
-      totalGridWidth += (columnPaddings[i] || paddings);
-    }
+    const totalGridHeight = rows * seatSize + 
+      (rows - 1) * paddings;
     
-    // グリッドの合計高さ
-    totalGridHeight = rows * seatSize;
-    
-    // コンテナの中央を計算
     const containerCenterX = mainContainerSize.width / 2;
     const containerCenterY = mainContainerSize.height / 2;
     
-    // グリッドの左上隅の座標（中央配置のため）
     const gridStartX = containerCenterX - (totalGridWidth / 2);
     const gridStartY = containerCenterY - (totalGridHeight / 2);
-
-    // 座席の初期位置を計算
-    const filledSeats = Array(Math.min(maxGridSeats, studentCount)).fill(null).map((_, idx) => {
+    
+    // すべての座席を一度に計算
+    const allSeats = Array(studentCount).fill(null).map((_, idx) => {
       const rowIndex = Math.floor(idx / cols);
       const colIndex = idx % cols;
       
-      // 列のパディングを計算（列間のパディングを累積）
       let totalColPadding = 0;
       for (let i = 0; i < colIndex; i++) {
         totalColPadding += (columnPaddings[i] || paddings);
@@ -137,27 +148,12 @@ export default function App() {
       
       return {
         assignedName: null,
-        // グリッド開始位置 + 列ごとの位置
         x: gridStartX + (colIndex * seatSize) + totalColPadding,
-        // グリッド開始位置 + 行ごとの位置
-        y: gridStartY + (rowIndex * seatSize),
+        y: gridStartY + (rowIndex * seatSize) + (rowIndex * paddings),
       };
     });
-
-  // 余った席も中央のエキストラエリアから配置
-  const extraSeatsCount = Math.max(0, studentCount - maxGridSeats);
-  const extraContainerCenterX = parseInt(extraContainerSize.width) / 2;
-  const extraContainerCenterY = extraContainerSize.height / 2;
-  
-  // エキストラ席のグリッド計算（簡易的に一列に配置）
-  const newExtraSeats = Array(extraSeatsCount).fill(null).map((_, idx) => ({
-    assignedName: null,
-    x: extraContainerCenterX - (seatSize / 2),
-    y: extraContainerCenterY - (seatSize / 2) + (idx * (seatSize + 20)),
-  }));
-
-  setSeats(filledSeats);
-  setExtraSeats(newExtraSeats);
+    
+    setSeats(allSeats);
   };
 
   const handleExcelImport = (e) => {
@@ -244,11 +240,16 @@ export default function App() {
     const { active } = event;
     const id = active.id;
     
+    // ドラッグアイテムの情報を保存
     if (id.includes('name-')) {
-      setDraggedType('NameTag'); 
-    } else if (id.includes('seat-') || id.includes('extraSeat-')) {
-      setDraggedType('SeatBox');
-    }
+      const nameIndex = parseInt(id.split('-')[1]);
+      setDraggedItem(names[nameIndex]);
+      setDraggedItemType('name');
+    } else if (id.includes('seat-')) {
+      const seatIndex = parseInt(id.split('-')[1]);
+      setDraggedItem(seats[seatIndex]);
+      setDraggedItemType('seat');
+    } 
   };
 
   const handleDragEnd = (event) => {
@@ -256,99 +257,78 @@ export default function App() {
     
     // ドラッグ中のアイテムのID
     const id = active.id;
+
+    // マウスの絶対位置
+    const mouseX = event.activatorEvent.clientX;
+    const mouseY = event.activatorEvent.clientY;
     
-    // マウスの現在位置を取得（オフセットを考慮）
-    const currentPosition = {
-      x: event.activatorEvent.clientX - event.activatorEvent.target.getBoundingClientRect().left,
-      y: event.activatorEvent.clientY - event.activatorEvent.target.getBoundingClientRect().top
-    };
+    // 座席エリアの位置を取得
+    const mainSeatContainer = document.querySelector('.seats-container');
+    
+    // 各コンテナの相対位置とサイズを取得
+    const mainRect = mainSeatContainer.getBoundingClientRect();
     
     // 名前タグをシートにドロップする場合
     if (id.includes('name-')) {
       const nameIndex = parseInt(id.split('-')[1]);
-      
-      // 座席エリアの位置を取得
-      const mainSeatContainer = document.querySelector('.seats-container');
-      const extraSeatContainer = document.querySelector('.extra-seats-container');
-      
-      // 各コンテナの相対位置とサイズを取得
-      const mainRect = mainSeatContainer.getBoundingClientRect();
-      const extraRect = extraSeatContainer.getBoundingClientRect();
-      
-      // マウスの絶対位置
-      const mouseX = event.activatorEvent.clientX;
-      const mouseY = event.activatorEvent.clientY;
-      
-      // マウスがどのコンテナ内にあるか判定
-      if (mouseX >= mainRect.left && mouseX <= mainRect.right && 
-          mouseY >= mainRect.top && mouseY <= mainRect.bottom) {
-        // メイン座席エリア内の相対位置を計算
-        const relativeX = mouseX - mainRect.left;
-        const relativeY = mouseY - mainRect.top;
-        
-        // 新しい座席を作成（座席のサイズの半分をオフセットして中央に配置）
-        const newSeat = {
-          assignedName: names[nameIndex],
-          x: relativeX - (seatSize / 2),
-          y: relativeY - (seatSize / 2)
-        };
-        
-        // 座席リストに追加
-        setSeats([...seats, newSeat]);
-      } 
-      else if (mouseX >= extraRect.left && mouseX <= extraRect.right && 
-              mouseY >= extraRect.top && mouseY <= extraRect.bottom) {
-        // エキストラ座席エリア内の相対位置を計算
-        const relativeX = mouseX - extraRect.left;
-        const relativeY = mouseY - extraRect.top;
-        
-        // 新しいエキストラ座席を作成
-        const newExtraSeat = {
-          assignedName: names[nameIndex],
-          x: relativeX - (seatSize / 2),
-          y: relativeY - (seatSize / 2)
-        };
-        
-        // エキストラ座席リストに追加
-        setExtraSeats([...extraSeats, newExtraSeat]);
+      const dropid = over?.id;
+      if (!dropid) {
+        // ドロップ先がない場合でも確実にスクロールを復帰させる
+        document.body.classList.remove('no-scroll');
+        return;
+      }
+      if (dropid.includes('seat-')) {
+        const seatIndex = parseInt(dropid.split('-')[1]);
+        const updatedSeats = [...seats];
+        if (!updatedSeats[seatIndex].assignedName) {
+          updatedSeats[seatIndex].assignedName = names[nameIndex];
+          setSeats(updatedSeats);
+        } else {
+          console.log("⚠️ この席は既に割り当て済みです");
+        }
+        // ここでも明示的にスクロールを復帰させる
+        document.body.classList.remove('no-scroll');
+        return;
       }
     } 
     // 既存の座席の移動
-    else if (id.includes('seat-') || id.includes('extraSeat-')) {
-      if (id.includes("seat-")) {
-        const seatIndex = parseInt(id.split('-')[1]);
-        const newSeats = [...seats];
-        newSeats[seatIndex] = {
-          ...newSeats[seatIndex], 
-          x: newSeats[seatIndex].x + delta.x,
-          y: newSeats[seatIndex].y + delta.y
-        };
-        setSeats(newSeats);
-      } else if (id.includes("extraSeat-")) {
-        const extraSeatIndex = parseInt(id.split('-')[1]);
-        const newExtraSeats = [...extraSeats];
-        newExtraSeats[extraSeatIndex] = {
-          ...newExtraSeats[extraSeatIndex],
-          x: newExtraSeats[extraSeatIndex].x + delta.x,
-          y: newExtraSeats[extraSeatIndex].y + delta.y
-        };
-        setExtraSeats(newExtraSeats);
-      }
-    }
-    
-    setDraggedType(null);
+    else if (id.includes('seat-')) {
+      // mainSeatContainer内にある場合は位置を更新
+      if (mouseX >= mainRect.left && mouseX <= mainRect.right && 
+          mouseY >= mainRect.top && mouseY <= mainRect.bottom) {
+            if (id.includes('seat-')) {
+              const seatIndex = parseInt(id.split('-')[1]);
+              const newSeats = [...seats];
+              newSeats[seatIndex] = {
+                ...newSeats[seatIndex], 
+                x: newSeats[seatIndex].x + delta.x,
+                y: newSeats[seatIndex].y + delta.y
+              };
+              setSeats(newSeats);
+            }
+      } 
+    } 
+    // ドラッグ終了時にドラッグアイテム情報をクリア
+    setDraggedItem(null);
+    setDraggedItemType(null);
+      // scrollを強制的に有効に戻す
+    document.body.classList.remove('no-scroll');
+  };
+
+  // ドロップアニメーションのカスタマイズ
+  const dropAnimation = {
+    sideEffects: defaultDropAnimationSideEffects({
+      styles: {
+        active: {
+          opacity: '0.5',
+        },
+      },
+    }),
   };
 
   // コンテナサイズの変更ハンドラー
   const handleMainContainerSizeChange = (dimension, value) => {
     setMainContainerSize(prev => ({
-      ...prev,
-      [dimension]: parseInt(value, 10)
-    }));
-  };
-
-  const handleExtraContainerSizeChange = (dimension, value) => {
-    setExtraContainerSize(prev => ({
       ...prev,
       [dimension]: parseInt(value, 10)
     }));
@@ -370,7 +350,6 @@ export default function App() {
         onCountChange={(val) => {
           setStudentCount(val);
           setNames(Array.from({ length: val }, () => ({ kanji: "", hiragana: "" })));
-          // 自動生成に任せる（ボタン不要）
         }}
         onRowChange={setRowCount}
         onColumnChange={setColumnCount}
@@ -456,21 +435,14 @@ export default function App() {
             />
             <span>px</span>
           </div>
-          <div>
-            <label>エキストラエリア高さ: </label>
-            <input 
-              type="number" 
-              min="100" 
-              max="800" 
-              value={extraContainerSize.height} 
-              onChange={(e) => handleExtraContainerSizeChange('height', e.target.value)} 
-            />
-            <span>px</span>
-          </div>
         </div>
       </div>
 
-      <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}   sensors={sensors}>
+      <DndContext 
+        onDragStart={handleDragStart} 
+        onDragEnd={handleDragEnd} 
+        sensors={sensors}
+      >
         <div className="app-container">
           {/* メインコンテンツエリア - レイアウト改善 */}
           <div className="main-content">
@@ -479,7 +451,7 @@ export default function App() {
               {/* 名前タグエリア - 縦方向に配置 */}
               <div className="tags-section">
                 <h3>生徒名</h3>
-                <div className="name-tags-container">
+                <div className="name-tags-container" style={{ maxHeight: '500px', overflow: 'auto' }}>
                   {names.map((name, idx) => (
                     <NameTag key={idx} id={`name-${idx}`} name={name} />
                   ))}
@@ -506,7 +478,8 @@ export default function App() {
                           top: `${seat.y}px`,
                           left: `${seat.x}px`,
                           width: `${seatSize}px`,
-                          height: `${seatSize}px`
+                          height: `${seatSize}px`,
+                          zIndex: 10,
                         }}
                       >
                         <SeatBox 
@@ -516,44 +489,7 @@ export default function App() {
                           textColor={textColor}
                           assignedColor={assignedColor}
                           assignedTextColor={assignedTextColor}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-                
-                {/* エキストラ座席エリア */}
-                <div 
-                  className="extra-seats-container" 
-                  style={{
-                    position: "relative",
-                    border: "1px dashed #aaa",
-                    width: "100%",
-                    height: `${containerSizes.extra.height}px`,
-                    marginTop: "20px",
-                    overflow: "auto"
-                  }}
-                >
-                  <h3 style={{ position: 'absolute', top: '10px', left: '10px', margin: 0, opacity: 0.7 }}>エキストラ座席エリア</h3>
-                  {extraSeats.map((extraSeat, idx) => {
-                    return (
-                      <div
-                        key={`extraSeat-${idx}`}
-                        style={{
-                          position: "absolute",
-                          top: `${extraSeat.y}px`,
-                          left: `${extraSeat.x}px`,
-                          width: `${seatSize}px`,
-                          height: `${seatSize}px`
-                        }}
-                      >
-                        <SeatBox 
-                          id={`extraSeat-${idx}`} 
-                          assigned={extraSeat.assignedName} 
-                          seatColor={seatColor}
-                          textColor={textColor}
-                          assignedColor={assignedColor}
-                          assignedTextColor={assignedTextColor}
+                          isDragging={draggedItemType === 'seat' && draggedItem === seat}
                         />
                       </div>
                     );
@@ -564,11 +500,32 @@ export default function App() {
           </div>
         </div>
 
-        {/* ドラッグ中のアイテムタイプを表示 */}
-        <div>
-          {draggedType ? `ドラッグ中のアイテム: ${draggedType}` : '何もドラッグしていません'}
+        <DragOverlay dropAnimation={dropAnimation} style={{ pointerEvents: 'none' }}>
+          {draggedItem && draggedItemType === 'name' && (
+            <div 
+              className="dragging-overlay"
+              style={{
+                pointerEvents: 'none',
+                zIndex: 9999,
+              }}
+            >
+              <NameTag id="dragging-name" name={draggedItem} />
+            </div>
+          )}
+          {draggedItem && draggedItemType === 'seat' && (
+            <div className="dragging-overlay">
+              <SeatBox 
+                id="dragging-seat" 
+                assigned={draggedItem.assignedName} 
+                seatColor={seatColor}
+                textColor={textColor}
+                assignedColor={assignedColor}
+                assignedTextColor={assignedTextColor}
+              />
+            </div>
+          )}
+            </DragOverlay>
+          </DndContext>
         </div>
-      </DndContext>
-    </div>
-  );
-}
+      );
+    }

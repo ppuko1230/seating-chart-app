@@ -6,13 +6,18 @@ body {
   
   .app-container {
     display: flex;
+    overflow: auto;
     flex-direction: row; /* 横並びを強制 */
     height: calc(100vh - 150px); /* 画面高さを活用 */
     min-height: 600px;
   }
-  
+  .dragging-overlay {
+    z-index: 9999;
+    pointer-events: none;
+  }
   /* Style.cssに追加 */
   .seats-container, .extra-seats-container {
+    overflow: visible;
     position: relative;
     border: 2px solid transparent;
     transition: border-color 0.2s;
@@ -73,12 +78,26 @@ body {
   }
 
   .seat-box {
+    position: relative; 
     width: 100%;
     height: 100%;
     padding: 10px;
     display: flex;
     flex-direction: column;
     justify-content: center;
+  }
+
+  /* 追加の座席が絶対位置で配置される */
+  .extra-seat-box {
+    position: absolute; /* 親の位置に依存せず自由に配置 */
+    cursor: grab;
+    z-index: 10; /* ドラッグ中の座席を他の要素より前に表示 */
+  }
+
+  /* ドラッグ中の座席のサイズを調整 */
+  .extra-seat-box.dragging {
+    opacity: 0.5; /* ドラッグ中の座席が透明になる */
+    cursor: grabbing; /* ドラッグ中のカーソルを変更 */
   }
   
   .seat-box .kanji {

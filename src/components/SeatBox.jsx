@@ -9,14 +9,25 @@ const SeatBox = ({ id, assigned, seatColor = "#f9f9f9", textColor = "#000000", a
   });
 
   // ドラッグ可能な要素として設定
-  const { attributes, listeners, setNodeRef: setDraggableRef, transform } = useDraggable({
+  const { attributes, listeners, setNodeRef: setDraggableRef, transform, isDragging } = useDraggable({
     id: id,
   });
 
-  // ドラッグ中のスタイルを設定
-  const style = transform ? {
-    transform: CSS.Transform.toString(transform),
-  } : undefined;
+  const baseStyle = {
+    width: '100%',
+    height: '100%',
+    border: '1px solid #ccc',
+    borderRadius: '5px',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'center',
+    alignItems: 'center',
+    cursor: 'move',
+    userSelect: 'none',
+    padding: '8px',
+    boxSizing: 'border-box',
+    position: 'absolute',       // ← これも重要！（座標指定されるため）
+  };
 
   // 割り当てられた名前がある場合の表示スタイル
   const assignedStyle = assigned ? {
@@ -26,12 +37,24 @@ const SeatBox = ({ id, assigned, seatColor = "#f9f9f9", textColor = "#000000", a
     backgroundColor: seatColor,
     color: textColor,
   };
-
   // ドロップ対象としてホバー中のスタイル
   const hoverStyle = isOver ? {
     boxShadow: '0 0 10px 3px rgba(0, 120, 255, 0.5)',
     border: '2px dashed #0078ff',
   } : {};
+
+  const combinedStyle = {
+    ...baseStyle,
+    ...assignedStyle,
+    ...hoverStyle,
+    ...(transform ? { transform: CSS.Transform.toString(transform) } : {}),
+    ...(isDragging ? { zIndex: 9999 } : { zIndex: 1 }),
+  };
+
+  // ドラッグ中のスタイルを設定
+  const style = transform ? {
+    transform: CSS.Transform.toString(transform),
+  } : undefined;
 
   return (
      <div
@@ -40,23 +63,7 @@ const SeatBox = ({ id, assigned, seatColor = "#f9f9f9", textColor = "#000000", a
         setDroppableRef(node);
         setDraggableRef(node);
       }}
-      style={{
-        width: '100%',
-        height: '100%',
-        border: '1px solid #ccc',
-        borderRadius: '5px',
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center',
-        alignItems: 'center',
-        cursor: 'move',
-        userSelect: 'none',
-        padding: '8px',
-        boxSizing: 'border-box',
-        ...assignedStyle,
-        ...hoverStyle,
-        ...style,
-      }}
+      style={combinedStyle}
       {...attributes}
       {...listeners}
     >
